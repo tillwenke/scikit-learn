@@ -19,6 +19,7 @@ from ..utils.optimize import _check_optimize_result
 from ..utils.validation import validate_data
 from .kernels import RBF, Kernel
 from .kernels import ConstantKernel as C
+import time
 
 GPR_CHOLESKY_LOWER = True
 
@@ -290,6 +291,7 @@ class GaussianProcessRegressor(MultiOutputMixin, RegressorMixin, BaseEstimator):
         self.X_train_ = np.copy(X) if self.copy_X_train else X
         self.y_train_ = np.copy(y) if self.copy_X_train else y
 
+        start = time.time()
         if self.optimizer is not None and self.kernel_.n_dims > 0:
             # Choose hyperparameters based on maximizing the log-marginal
             # likelihood (potentially starting from several initial values)
@@ -336,12 +338,16 @@ class GaussianProcessRegressor(MultiOutputMixin, RegressorMixin, BaseEstimator):
             self.log_marginal_likelihood_value_ = self.log_marginal_likelihood(
                 self.kernel_.theta, clone_kernel=False
             )
+        print("Optimization time: ", time.time() - start)
+        start = time.time()
 
         # Precompute quantities required for predictions which are independent
         # of actual query points
         # Alg. 2.1, page 19, line 2 -> L = cholesky(K + sigma^2 I)
         K = self.kernel_(self.X_train_)
         K[np.diag_indices_from(K)] += self.alpha
+        print("Kernel calc time: ", time.time() - start)
+        start = time.time()
         try:
             self.L_ = cholesky(K, lower=GPR_CHOLESKY_LOWER, check_finite=False)
         except np.linalg.LinAlgError as exc:
@@ -353,13 +359,17 @@ class GaussianProcessRegressor(MultiOutputMixin, RegressorMixin, BaseEstimator):
                 ),
             ) + exc.args
             raise
+        print("Cholesky time: ", time.time() - start)
+        start = time.time()
         # Alg 2.1, page 19, line 3 -> alpha = L^T \ (L \ y)
         self.alpha_ = cho_solve(
             (self.L_, GPR_CHOLESKY_LOWER),
             self.y_train_,
             check_finite=False,
         )
+        print("Alpha time: ", time.time() - start)
         return self
+        
 
     def predict(self, X, return_std=False, return_cov=False):
         """Predict using the Gaussian process regression model.
